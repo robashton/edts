@@ -119,36 +119,42 @@ compile_and_load(File0, Opts) ->
            true  -> lists:nthtail(length(Cwd) + 1, File0);
            false -> File0
          end,
-  OutDir  = get_compile_outdir(File0),
-  reload_if_newer(File0, OutDir),
-  OldOpts = extract_compile_opts(File),
+  case get_compile_outdir(File0) of
+    undefined ->
+          error_logger:error_msg("(~p) Didn't compile because no beam exists yet ~p",
+                                 [node(), File0]),
+          {ok, {[], []}};
+    OutDir ->
+      reload_if_newer(File0, OutDir),
+      OldOpts = extract_compile_opts(File),
 
-  AdditionalIncludes = get_additional_includes(filename:dirname(File), OldOpts),
-  CompileOpts = [{cwd, Cwd},
-                 {outdir, OutDir},
-                 binary,
-                 debug_info,
-                 return|Opts] ++ OldOpts ++ AdditionalIncludes,
-  %% Only compile to a binary to begin with since compile-options resulting in
-  %% an output-file will cause the compile module to remove the existing beam-
-  %% file even if compilation fails, in which case we end up with no module
-  %% at all for other analyses (xref etc.).
-  case compile:file(File, CompileOpts) of
-    {ok, Mod, Bin, Warnings} ->
-      OutFile = filename:join(OutDir, atom_to_list(Mod)),
-      case file:write_file(OutFile ++ ".beam", Bin) of
-        ok ->
-          code:purge(Mod),
-          {module, Mod} = code:load_abs(OutFile),
-          add_path(OutDir),
-          {ok, {[], format_errors(warning, Warnings)}};
-        {error, _} = Err ->
-          error_logger:error_msg("(~p) Failed to write ~p: ~p",
-                                 [node(), OutFile, Err]),
-          Err
-      end;
-    {error, Errors, Warnings} ->
-      {error, {format_errors(error, Errors), format_errors(warning, Warnings)}}
+      AdditionalIncludes = get_additional_includes(filename:dirname(File), OldOpts),
+      CompileOpts = [{cwd, Cwd},
+                     {outdir, OutDir},
+                     binary,
+                     debug_info,
+                     return|Opts] ++ OldOpts ++ AdditionalIncludes,
+      %% Only compile to a binary to begin with since compile-options resulting in
+      %% an output-file will cause the compile module to remove the existing beam-
+      %% file even if compilation fails, in which case we end up with no module
+      %% at all for other analyses (xref etc.).
+      case compile:file(File, CompileOpts) of
+        {ok, Mod, Bin, Warnings} ->
+          OutFile = filename:join(OutDir, atom_to_list(Mod)),
+          case file:write_file(OutFile ++ ".beam", Bin) of
+            ok ->
+              code:purge(Mod),
+              {module, Mod} = code:load_abs(OutFile),
+              add_path(OutDir),
+              {ok, {[], format_errors(warning, Warnings)}};
+            {error, _} = Err ->
+              error_logger:error_msg("(~p) Failed to write ~p: ~p",
+                                     [node(), OutFile, Err]),
+              Err
+          end;
+        {error, Errors, Warnings} ->
+          {error, {format_errors(error, Errors), format_errors(warning, Warnings)}}
+      end
   end.
 
 %%------------------------------------------------------------------------------
